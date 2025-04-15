@@ -14,8 +14,16 @@ import traceback # エラー詳細表示用
 import requests
 
 # --- グローバル変数 ---
-selected_model = "small" # ★ デフォルトモデルを 'small' に変更
-available_models = ["tiny", "base", "small", "medium", "large"]
+selected_model = "mlx-community/whisper-small-mlx" # ★ デフォルトモデルを 'small' に変更
+available_models = [
+    "mlx-community/whisper-tiny-mlx", 
+    "mlx-community/whisper-base-mlx",
+    "mlx-community/whisper-small-mlx",
+    "mlx-community/whisper-medium-mlx-fp32",
+    "mlx-community/whisper-turbo",
+    "mlx-community/whisper-turbo",
+    "mlx-community/whisper-large-v3-mlx"
+    ]
 audio_stream = None
 recording_thread = None
 is_recording = False # リアルタイム録音中フラグ
@@ -58,16 +66,20 @@ def transcribe_realtime_task(model_name, output_filename, app_instance):
     try:
         # --- 初期設定 ---
         latitude, longitude = get_location()
-        location_info = f"録音開始地点: 緯度 {latitude:.6f}, 経度 {longitude:.6f}\n---\n" if latitude != "エラー" else "録音開始地点: 位置情報取得エラー\n---\n"
+        if latitude != "エラー" and longitude != "エラー":
+            location_info = f"録音開始地点: 緯度 {float(latitude):.6f}, 経度 {float(longitude):.6f}\n---\n"
+        else:
+            location_info = "録音開始地点: 位置情報取得エラー\n---\n"
         print(f"RT: {location_info.strip()}")
         app_instance.after(0, lambda: app_instance.update_transcription_display(location_info))
 
         print(f"RT: モデル '{model_name}' をロード中...")
-        app_instance.after(0, lambda: app_instance.status_label.configure(text=f"モデル '{model_name}' をロード中..."))
-        # model = mlx_whisper.load_model(model_name, verbose=False)
-        # load_models.load_modelを使用するように変更
-        model = mlx_whisper.load_models.load_model(model_name, verbose=False)
-        print(f"RT: モデル '{model_name}' ロード完了。")
+        # モデルの事前ロードは行わない
+        # app_instance.after(0, lambda: app_instance.status_label.configure(text=f"モデル '{model_name}' をロード中..."))
+        # # model = mlx_whisper.load_model(model_name, verbose=False)
+        # # load_models.load_modelを使用するように変更
+        # model = mlx_whisper.load_models.load_model(model_name, verbose=False)
+        # print(f"RT: モデル '{model_name}' ロード完了。")
         app_instance.after(0, lambda: app_instance.status_label.configure(text=f"リアルタイム文字起こし中 ({model_name})..."))
 
         # --- ファイルオープンとメインループ ---
@@ -115,14 +127,21 @@ def transcribe_realtime_task(model_name, output_filename, app_instance):
                         #   もしエラーになる場合は、model引数を削除し、
                         #   path_or_hf_repo=model_name を渡す形式に変更する必要がある。
                         #   ひとまず現状維持で試す。
-                        result = mlx_whisper.transcribe(model, # ★ ロードしたモデルオブジェクト
-                                                        audio_to_process, # 音声データ
-                                                        # path_or_hf_repo=model_name # ★ エラーの場合の代替案
-                                                        sample_rate=samplerate,
+                        # result = mlx_whisper.transcribe(model, # ★ ロードしたモデルオブジェクト
+                        #                                 audio_to_process, # 音声データ
+                        #                                 # path_or_hf_repo=model_name # ★ エラーの場合の代替案
+                        #                                 sample_rate=samplerate,
+                        #                                 language="ja",
+                        #                                 word_timestamps=False,
+                        #                                 fp16=True, # ★ 半精度を明示
+                        #                                 verbose=False) # 詳細ログ不要ならFalse
+                        result = mlx_whisper.transcribe(audio=audio_to_process,
+                                                        path_or_hf_repo=model_name,
+                                                        # sample_rate=samplerate,
                                                         language="ja",
                                                         word_timestamps=False,
-                                                        fp16=True, # ★ 半精度を明示
-                                                        verbose=False) # 詳細ログ不要ならFalse
+                                                        fp16=True,
+                                                        verbose=False)
                         transcript = result["text"].strip()
                         print(f"RT: 結果: '{transcript}'")
                         last_process_time = time.time() # 最終処理時刻を更新
@@ -147,7 +166,14 @@ def transcribe_realtime_task(model_name, output_filename, app_instance):
                         audio_to_process = accumulated_audio
                         accumulated_audio = np.array([], dtype=np.float32) # バッファクリア
 
-                        result = mlx_whisper.transcribe(audio=audio_to_process, model=model, sample_rate=samplerate, language="ja", word_timestamps=False, fp16=True, verbose=False)
+                        # result = mlx_whisper.transcribe(audio=audio_to_process, model=model, sample_rate=samplerate, language="ja", word_timestamps=False, fp16=True, verbose=False)
+                        result = mlx_whisper.transcribe(audio=audio_to_process,
+                                                        path_or_hf_repo=model_name,
+                                                        # sample_rate=samplerate,
+                                                        language="ja",
+                                                        word_timestamps=False,
+                                                        fp16=True,
+                                                        verbose=False)
                         transcript = result["text"].strip()
                         print(f"RT: 最終結果: '{transcript}'")
                         if transcript:
